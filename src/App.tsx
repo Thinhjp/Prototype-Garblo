@@ -43,6 +43,16 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     signal: <path d="M5 18v-4M10 18V9M15 18V5M20 18V2" />,
     wifi: <path d="M3 9.5a13 13 0 0 1 18 0M6 13a8.5 8.5 0 0 1 12 0M9.5 16.5a4 4 0 0 1 5 0M12 20h.01" />,
     battery: <><rect x="3" y="8" width="17" height="8" rx="2" /><path d="M21 11v2" /><path d="M5 10h9v4H5Z" /></>,
+    trophy: <><path d="M7 4h10v4a5 5 0 0 1-10 0V4Z" /><path d="M7 5H4v1a4 4 0 0 0 4 4M17 5h3v1a4 4 0 0 1-4 4M12 13v4m-3 3h6m-3-3v3" /></>,
+    tree: <><path d="M12 3c2.5 3 4 5 4 7.5a4 4 0 0 1-8 0C8 8 9.5 6 12 3Z" /><path d="M12 14v7M9 21h6" /></>,
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>,
+    hanger: <><path d="M12 5a2 2 0 1 1 2 2c-1.6 0-2.7 1.2-2.7 2.8V11" /><path d="m4.5 12.5 7.5-3 7.5 3-7.5 5.5-7.5-5.5Z" /></>,
+    star: <path d="m12 3 2.6 5.6 6.1.8-4.5 4.3 1.2 6L12 16.9 6.6 19.7l1.2-6L3.3 9.4l6.1-.8L12 3Z" />,
+    'cloud-co2': <><path d="M7 18a4.5 4.5 0 1 1 .6-8.96A5.5 5.5 0 0 1 18.3 9.5 3.5 3.5 0 0 1 17 16H7Z" /><text x="12" y="15" textAnchor="middle" fontSize="6.5" fontWeight="800" fill="currentColor" stroke="none" fontFamily="Manrope,sans-serif">CO₂</text></>,
+    jacket: <path d="m6 4-4 3 2 4 3-1v10h10V10l3 1 2-4-4-3-2 2H8Z" />,
+    pants: <path d="M8 4h8l-1 16h-3l-1-6-1 6H7L8 4Z" />,
+    shoe: <path d="M4 15c4-1 7-4 9-8l5 2c2 3 3 5 2 7l-2 2H6c-2 0-3-2-2-3Z" />,
+    tie: <><path d="m12 3 2 4-2 4-2-4 2-4Z" /><path d="M10 11h4l-2 10-2-10Z" /></>,
   }
   return <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }
@@ -277,7 +287,7 @@ const outfitPhotos: Record<string, string[]> = {
   ],
 }
 
-function MatchCards({ context, onEdit, onTry, onContext, onBell }: { context: string; onEdit: () => void; onTry: () => void; onContext: () => void; onBell: () => void }) {
+function MatchCards({ context, onEdit, onTry, onContext, onBell, onFinish }: { context: string; onEdit: () => void; onTry: () => void; onContext: () => void; onBell: () => void; onFinish: () => void }) {
   const [look, setLook] = useState(2)
   const [toast, setToast] = useState(false)
   const [dragX, setDragX] = useState(0)
@@ -299,7 +309,8 @@ function MatchCards({ context, onEdit, onTry, onContext, onBell }: { context: st
       window.setTimeout(() => setToast(false), 900)
     }
     window.setTimeout(() => {
-      setLook(current => (current + 1) % 8)
+      if (look >= 7) { onFinish(); return }
+      setLook(look + 1)
       setTransitioning(false)
       setDragX(0)
       setAnimating(false)
@@ -347,7 +358,7 @@ function MatchCards({ context, onEdit, onTry, onContext, onBell }: { context: st
       {renderCard(look, true)}
     </div>
     <div className="match-header"><Logo inverse /><div className="match-header-actions"><div className="weather">29°</div><Button className="icon-button bell" onClick={onBell}><Icon name="bell" /><i /></Button></div></div>
-    <div className="match-top"><span>{look + 1}/8 bộ hôm nay</span><Button className="glass-link" onClick={onContext}>Đổi bối cảnh</Button></div>
+    <div className="match-top"><span>{look + 1}/8 bộ hôm nay</span><div className="match-top-actions"><Button className="glass-link" onClick={onContext}>Đổi bối cảnh</Button><Button className="result-pill" onClick={onFinish}><Icon name="sparkle" size={13} /> Xem kết quả</Button></div></div>
     {toast && <div className="saved-toast"><Icon name="check" size={16} /> Đã lưu</div>}
     <div className="action-stack">
       <Button className="action-item" onClick={() => dismiss(false)}><span className="round-action reject"><Icon name="x" /></span><small>Bỏ</small></Button>
@@ -355,6 +366,65 @@ function MatchCards({ context, onEdit, onTry, onContext, onBell }: { context: st
       <Button className="action-item" onClick={onEdit}><span className="round-action adjust"><Icon name="sliders" /></span><small>Chỉnh</small></Button>
       <Button className="action-item" onClick={onTry}><span className="round-action try"><Icon name="shirt" /></span><small>Thử đồ ảo</small></Button>
     </div>
+  </div>
+}
+
+function ImpactResult({ context, onBack, onReview, onShare }: { context: string; onBack: () => void; onReview: () => void; onShare: () => void }) {
+  const [saved, setSaved] = useState(false)
+  const [toast, setToast] = useState(false)
+  const [showInfo, setShowInfo] = useState(false)
+  const metrics = [
+    { icon: 'trophy', value: 'Top 8%', desc: 'người dùng tận dụng tủ đồ hiệu quả' },
+    { icon: 'cloud-co2', value: '6 kg', desc: 'CO₂e tránh phát thải ước tính' },
+    { icon: 'tree', value: '3 tháng', desc: 'hấp thụ CO₂ của một cây trưởng thành' },
+  ]
+  const items = [
+    ['shirt', 'Áo sơ mi trắng'],
+    ['jacket', 'Blazer đen'],
+    ['pants', 'Quần tây đen'],
+    ['shoe', 'Giày da đen'],
+    ['tie', 'Cà vạt đen sọc chéo xám'],
+  ] as const
+  const saveToCalendar = () => {
+    if (saved) return
+    setSaved(true)
+    setToast(true)
+    window.setTimeout(() => setToast(false), 2400)
+  }
+  return <div className="result-screen">
+    <div className="ctx-status-bar"><span>07:30</span><div className="ctx-status-icons"><Icon name="signal" size={13} /><Icon name="wifi" size={13} /><Icon name="battery" size={13} /></div></div>
+    <div className="ctx-header">
+      <Button className="ctx-icon-btn" onClick={onBack}><Icon name="back" /></Button>
+      <Logo />
+      <Button className="ctx-icon-btn" onClick={onShare}><Icon name="share" /></Button>
+    </div>
+    <div className="result-body">
+      <div className="result-hero">
+        <h1>Cảm ơn Tim! 🌱</h1>
+        <p>Bạn đã chọn outfit phù hợp từ tủ đồ hiện có.</p>
+        <p className="result-hero-sub">Mỗi lần mặc thông minh hơn là một bước tiến vì hành tinh xanh hơn.</p>
+      </div>
+      <div className="impact-card">
+        <div className="impact-card-head"><b>TÁC ĐỘNG TỪ GARBLO CỦA BẠN</b><Button className="impact-info-btn" onClick={() => setShowInfo(v => !v)} aria-label="Giải thích cách tính chỉ số"><Icon name="info" size={15} /></Button></div>
+        {showInfo && <div className="impact-note">Chỉ số demo ước tính dựa trên tần suất mặc lại đồ có sẵn — chưa được xác minh khoa học.</div>}
+        <div className="impact-metrics">{metrics.map(m => <div className="impact-metric" key={m.value}><span className="impact-metric-icon"><Icon name={m.icon} size={18} /></span><strong>{m.value}</strong><small>{m.desc}</small></div>)}</div>
+      </div>
+      <div className="nature-banner">
+        <img src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=900&q=80" alt="Rừng xanh" />
+        <div className="nature-copy">Mặc thông minh hơn<br />vì một hành tinh xanh hơn. 🌱</div>
+      </div>
+      <div className="outfit-card">
+        <div className="outfit-card-head"><b>Outfit đã chọn</b><span>Hôm nay · Hackathon Pitching Day</span></div>
+        <div className="outfit-label"><span>OUTFIT 03</span><div><strong>{'CONFIDENT & ELEGANT'}</strong><Icon name="star" size={16} /></div></div>
+        <div className="outfit-photo-wrap"><img src={`https://images.unsplash.com/${outfitPhotos[context][2]}?auto=format&fit=crop&w=900&q=84`} alt="Outfit 03 CONFIDENT & ELEGANT" /></div>
+        <div className="outfit-items">{items.map(([icon, name]) => <div className="outfit-item" key={name}><span className="outfit-item-icon"><Icon name={icon} size={16} /></span><span>{name}</span></div>)}</div>
+        <div className="outfit-actions">
+          <Button className="outfit-btn secondary" onClick={onReview}><Icon name="hanger" size={16} /> Xem lại outfit</Button>
+          <Button className="outfit-btn primary" disabled={saved} onClick={saveToCalendar}><Icon name="calendar" size={16} /> {saved ? 'Đã lưu vào lịch' : 'Lưu vào lịch'}</Button>
+        </div>
+      </div>
+    </div>
+    {toast && <div className="result-toast"><Icon name="check" size={15} /> Đã lưu outfit vào lịch của bạn</div>}
   </div>
 }
 
@@ -478,7 +548,7 @@ export default function App() {
   const [captureSheet, setCaptureSheet] = useState(false)
   const [loading, setLoading] = useState(false)
   const [hasNewItems, setHasNewItems] = useState(false)
-  const [matchStage, setMatchStage] = useState<'context' | 'cards'>('context')
+  const [matchStage, setMatchStage] = useState<'context' | 'cards' | 'result'>('context')
   const [matchContext, setMatchContext] = useState('Đi làm')
   const changeTab = (next: Tab) => {
     setOverlay('none')
@@ -496,12 +566,13 @@ export default function App() {
   const closeOverlay = () => setOverlay('none')
   const isMatchCard = tab === 'match' && matchStage === 'cards'
   const isContextScreen = tab === 'match' && matchStage === 'context'
-  return <div className={`app-frame ${isMatchCard ? 'match-mode' : ''} ${isContextScreen ? 'context-mode' : ''}`}>
-    {!isMatchCard && !isContextScreen && <Header onBell={() => setOverlay('notifications')} />}
+  const isResultScreen = tab === 'match' && matchStage === 'result'
+  return <div className={`app-frame ${isMatchCard ? 'match-mode' : ''} ${isContextScreen ? 'context-mode' : ''} ${isResultScreen ? 'result-mode' : ''}`}>
+    {!isMatchCard && !isContextScreen && !isResultScreen && <Header onBell={() => setOverlay('notifications')} />}
     <main>
       {tab === 'add' && <AddUpload onAnalyze={() => setCaptureSheet(true)} />}
       {tab === 'wardrobe' && <Wardrobe loading={loading} hasNewItems={hasNewItems} onItem={() => setOverlay('item')} onMatch={() => { setTab('match'); setMatchStage('context') }} />}
-      {tab === 'match' && (matchStage === 'context' ? <ContextCollection onBack={() => setTab('wardrobe')} onViewOutfits={() => setMatchStage('cards')} /> : <MatchCards context={matchContext} onEdit={() => setOverlay('edit')} onTry={() => setOverlay('tryon')} onContext={() => setMatchStage('context')} onBell={() => setOverlay('notifications')} />)}
+      {tab === 'match' && (matchStage === 'context' ? <ContextCollection onBack={() => setTab('wardrobe')} onViewOutfits={() => setMatchStage('cards')} /> : matchStage === 'cards' ? <MatchCards context={matchContext} onEdit={() => setOverlay('edit')} onTry={() => setOverlay('tryon')} onContext={() => setMatchStage('context')} onBell={() => setOverlay('notifications')} onFinish={() => setMatchStage('result')} /> : <ImpactResult context={matchContext} onBack={() => setMatchStage('cards')} onReview={() => setMatchStage('cards')} onShare={() => setOverlay('shareImpact')} />)}
       {tab === 'impact' && <Impact onShare={() => setOverlay('shareImpact')} />}
       {tab === 'community' && <Community onShare={() => setOverlay('shareCommunity')} />}
     </main>
