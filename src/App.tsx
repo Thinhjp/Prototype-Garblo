@@ -198,19 +198,6 @@ function CaptureSheet({ onOk, onRetake }: { onOk: () => void; onRetake: () => vo
   </div></div>
 }
 
-function MatchSetup({ onStart }: { onStart: (context: string) => void }) {
-  const [selected, setSelected] = useState('Cà phê')
-  return <div className="match-setup screen-content">
-    <div className="match-orb"><Icon name="sparkle" size={28} /></div>
-    <div className="eyebrow">STUDIO PHỐI ĐỒ AI</div><div className="page-title large">Hôm nay bạn<br />muốn mặc gì?</div>
-    <p className="lead">Chọn bối cảnh để garblo phối từ đúng những món bạn đang có.</p>
-    <div className="context-chips">{['Đi làm', 'Cà phê', 'Mưa chiều', 'Hẹn hò', 'Đi chơi cuối tuần'].map(x => <Button key={x} className={`context-chip ${selected === x ? 'selected' : ''}`} onClick={() => setSelected(x)}>{x}</Button>)}</div>
-    <label className="prompt-box"><span>NÓI THÊM VỚI GARBLO</span><textarea defaultValue="đi cà phê với bạn, trời mưa nhẹ, muốn nhìn năng động" /><i><Icon name="sparkle" size={16} /></i></label>
-    <div className="agent-note"><span>12</span><div><b>món sẵn sàng phối</b><small>Không đề xuất đồ cần mua thêm</small></div></div>
-    <Button className="primary wide start-swipe" onClick={() => onStart(selected)}>Bắt đầu quẹt <Icon name="chevron" /></Button>
-  </div>
-}
-
 function ContextCollection({ onBack, onViewOutfits }: { onBack: () => void; onViewOutfits: () => void }) {
   const weatherRows = [
     ['10:00', 'Nhiều mây', '17°'],
@@ -491,13 +478,13 @@ export default function App() {
   const [captureSheet, setCaptureSheet] = useState(false)
   const [loading, setLoading] = useState(false)
   const [hasNewItems, setHasNewItems] = useState(false)
-  const [matchStage, setMatchStage] = useState<'setup' | 'context' | 'cards'>('setup')
-  const [matchContext, setMatchContext] = useState('Cà phê')
+  const [matchStage, setMatchStage] = useState<'context' | 'cards'>('context')
+  const [matchContext, setMatchContext] = useState('Đi làm')
   const changeTab = (next: Tab) => {
     setOverlay('none')
     setCaptureSheet(false)
     setTab(next)
-    if (next === 'match') setMatchStage('setup')
+    if (next === 'match') setMatchStage('context')
   }
   const finishCapture = () => {
     setCaptureSheet(false)
@@ -513,8 +500,8 @@ export default function App() {
     {!isMatchCard && !isContextScreen && <Header onBell={() => setOverlay('notifications')} />}
     <main>
       {tab === 'add' && <AddUpload onAnalyze={() => setCaptureSheet(true)} />}
-      {tab === 'wardrobe' && <Wardrobe loading={loading} hasNewItems={hasNewItems} onItem={() => setOverlay('item')} onMatch={() => { setTab('match'); setMatchStage('setup') }} />}
-      {tab === 'match' && (matchStage === 'setup' ? <MatchSetup onStart={context => { setMatchContext(context); setMatchStage('context') }} /> : matchStage === 'context' ? <ContextCollection onBack={() => setMatchStage('setup')} onViewOutfits={() => setMatchStage('cards')} /> : <MatchCards context={matchContext} onEdit={() => setOverlay('edit')} onTry={() => setOverlay('tryon')} onContext={() => setMatchStage('setup')} onBell={() => setOverlay('notifications')} />)}
+      {tab === 'wardrobe' && <Wardrobe loading={loading} hasNewItems={hasNewItems} onItem={() => setOverlay('item')} onMatch={() => { setTab('match'); setMatchStage('context') }} />}
+      {tab === 'match' && (matchStage === 'context' ? <ContextCollection onBack={() => setTab('wardrobe')} onViewOutfits={() => setMatchStage('cards')} /> : <MatchCards context={matchContext} onEdit={() => setOverlay('edit')} onTry={() => setOverlay('tryon')} onContext={() => setMatchStage('context')} onBell={() => setOverlay('notifications')} />)}
       {tab === 'impact' && <Impact onShare={() => setOverlay('shareImpact')} />}
       {tab === 'community' && <Community onShare={() => setOverlay('shareCommunity')} />}
     </main>
