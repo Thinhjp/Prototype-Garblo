@@ -1,0 +1,10 @@
+{
+  "description": "Transform your wardrobe with AI by photographing your clothes, creating outfits from what you own, and discovering new looks tailored to your style.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
