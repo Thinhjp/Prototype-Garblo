@@ -1,7 +1,44 @@
-import { useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ChangeEvent, type PointerEvent, type ReactNode, type RefObject } from 'react'
 
 type Tab = 'add' | 'wardrobe' | 'match' | 'impact' | 'community'
 type Overlay = 'none' | 'notifications' | 'settings' | 'delete' | 'item' | 'tryon' | 'edit' | 'shareImpact' | 'shareCommunity'
+
+const categories = ['Áo', 'Quần', 'Váy', 'Giày', 'Túi', 'Mũ'] as const
+type Category = typeof categories[number]
+type UploadedPhoto = { id: string; file: File; url: string }
+type WardrobeItem = {
+  id: string; name: string; category: Category; type: string; color: string
+  material: string; style: string; tag: string; rare: string; image: string
+  sourcePhotoId?: string; batchId?: string; demo: boolean
+}
+type AnalysisDraft = { id: string; photos: UploadedPhoto[]; items: WardrobeItem[] }
+type MatchContext = {
+  id: string; label: string; event: string; time: string; location: string
+  temperature: string; weather: string; rain: string; commute: string; style: string
+}
+type Outfit = { id: string; name: string; image: string; itemIds: string[]; number: number }
+type MatchSession = {
+  id: string; context: MatchContext; outfits: Outfit[]; items: WardrobeItem[]
+  index: number; decisions: Record<string, 'like' | 'dislike'>; selectedOutfitId: string | null
+}
+type AnalysisStatus = 'idle' | 'loading' | 'error'
+const categoryTypes: Record<Category, string> = { Áo: 'shirt', Quần: 'pants', Váy: 'pants', Giày: 'shoe', Túi: 'bag', Mũ: 'hat' }
+const contextPresets: MatchContext[] = [
+  { id: 'work', label: 'Đi làm', event: 'Hackathon Pitching Day', time: '09:00 – 18:00', location: 'Tokyo, Nhật Bản', temperature: '16 – 19°C', weather: 'Nhiều mây, có lúc hửng nắng', rain: '80%', commute: 'Đi bộ kết hợp tàu điện', style: 'Thanh lịch, thoải mái' },
+  { id: 'coffee', label: 'Cà phê', event: 'Cà phê cùng bạn', time: '09:00 – 11:00', location: 'TP. Hồ Chí Minh', temperature: '27 – 30°C', weather: 'Nắng nhẹ', rain: '20%', commute: 'Đi bộ quãng ngắn', style: 'Hằng ngày, thoải mái' },
+  { id: 'rain', label: 'Mưa chiều', event: 'Hẹn chiều sau giờ làm', time: '17:00 – 19:00', location: 'TP. Hồ Chí Minh', temperature: '25 – 28°C', weather: 'Có mưa vào buổi chiều', rain: '80%', commute: 'Tàu điện và đi bộ', style: 'Gọn nhẹ, dễ di chuyển' },
+  { id: 'date', label: 'Hẹn hò', event: 'Bữa tối hẹn hò', time: '18:00 – 21:00', location: 'Hà Nội', temperature: '22 – 25°C', weather: 'Trời mát, ít mây', rain: '10%', commute: 'Taxi và đi bộ quãng ngắn', style: 'Thanh lịch, tối giản' },
+  { id: 'weekend', label: 'Đi chơi cuối tuần', event: 'Dạo phố cuối tuần', time: '09:00 – 16:00', location: 'Đà Nẵng', temperature: '26 – 29°C', weather: 'Nắng, có mây', rain: '20%', commute: 'Đi bộ nhiều', style: 'Năng động, thoải mái' },
+]
+
+// Fixture FE: một bản nháp cho mỗi ảnh, không phải kết quả nhận diện AI.
+function createDemoDraft(photos: UploadedPhoto[]): AnalysisDraft {
+  const id = crypto.randomUUID()
+  return { id, photos: [...photos], items: photos.map((photo, index) => {
+    const category = (['Áo', 'Quần', 'Giày'] as const)[index % 3]
+    return { id: crypto.randomUUID(), batchId: id, sourcePhotoId: photo.id, name: `${category} từ ảnh ${index + 1}`, category, type: categoryTypes[category], color: 'Chưa xác định', material: 'Chưa xác định', style: 'Hằng ngày', tag: `${category} · Hằng ngày`, rare: '', image: photo.url, demo: true }
+  }) }
+}
 
 const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: 'add', label: 'Thêm', icon: 'plus' },
@@ -61,18 +98,18 @@ function Logo({ inverse = false }: { inverse?: boolean }) {
   return <div className={`logo ${inverse ? 'inverse' : ''}`}><span>G</span><b>garblo</b></div>
 }
 
-function Button({ children, className = '', onClick, disabled = false }: { children: ReactNode; className?: string; onClick?: () => void; disabled?: boolean }) {
-  return <button className={`button ${className}`} onClick={onClick} disabled={disabled}>{children}</button>
+function Button({ children, className = '', type = 'button', ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return <button type={type} className={`button ${className}`} {...props}>{children}</button>
 }
 
 function Header({ dark = false, onBell, title, onBack, gear }: { dark?: boolean; onBell?: () => void; title?: string; onBack?: () => void; gear?: () => void }) {
   return <div className={`header ${dark ? 'header-dark' : ''}`}>
-    {onBack ? <Button className="icon-button ghost" onClick={onBack}><Icon name="back" /></Button> : <Logo inverse={dark} />}
+    {onBack ? <Button className="icon-button ghost" aria-label="Quay lại" onClick={onBack}><Icon name="back" /></Button> : <Logo inverse={dark} />}
     {title && <div className="header-title">{title}</div>}
     <div className="header-actions">
-      {!title && <div className="weather">29°</div>}
-      {gear ? <Button className="icon-button ghost muted" onClick={gear}><Icon name="gear" /></Button> :
-        <Button className="icon-button ghost bell" onClick={onBell}><Icon name="bell" /><i /></Button>}
+      {!title && <div className="weather">Bản demo</div>}
+      {gear ? <Button className="icon-button ghost muted" aria-label="Cài đặt" onClick={gear}><Icon name="gear" /></Button> :
+        onBell && <Button className="icon-button ghost bell" aria-label="Thông báo" onClick={onBell}><Icon name="bell" /><i /></Button>}
     </div>
   </div>
 }
@@ -133,131 +170,140 @@ const wardrobe = [
   { name: 'Mũ bucket', type: 'hat', color: '#C6F432', tag: 'Mũ · Street', rare: '', image: 'https://images.unsplash.com/photo-1789925941317-23b34b25c86f?auto=format&fit=crop&w=700&q=82' },
 ]
 
-function ProductPhoto({ item }: { item: typeof wardrobe[number] }) {
-  return item.image
-    ? <img className="product-photo" src={item.image} alt={item.name} />
+const initialWardrobe: WardrobeItem[] = wardrobe.map((item, index) => ({
+  ...item, id: `demo-item-${index + 1}`, category: item.tag.split(' · ')[0] as Category,
+  material: 'Chưa xác định', style: item.tag.split(' · ')[1], demo: true,
+}))
+
+function ProductPhoto({ item }: { item: { name: string; image: string } }) {
+  const [failedImage, setFailedImage] = useState<string | null>(null)
+  return item.image && failedImage !== item.image
+    ? <img className="product-photo" src={item.image} alt={item.name} draggable={false} onError={() => setFailedImage(item.image)} />
     : <div className="product-placeholder" aria-label={`Chưa có ảnh cho ${item.name}`}><Icon name="image" size={24} /></div>
 }
 
-function Wardrobe({ onItem, onMatch, loading, hasNewItems }: { onItem: () => void; onMatch: () => void; loading: boolean; hasNewItems: boolean }) {
-  const [filter, setFilter] = useState('Tất cả')
-  const filters = ['Tất cả', 'Áo', 'Quần', 'Giày', 'Túi', 'Mũ']
-  const newItems = [
-    { name: 'Áo sơ mi mới', type: 'shirt', color: '#6D4AFF', tag: 'Áo · Street', rare: '', image: '' },
-    { name: 'Quần ống rộng mới', type: 'pants', color: '#26203A', tag: 'Quần · Tối giản', rare: '', image: '' },
-    { name: 'Giày mới', type: 'shoe', color: '#D8CDB8', tag: 'Giày · Hằng ngày', rare: '', image: '' },
-  ]
-  const visibleItems = hasNewItems ? [...newItems, ...wardrobe] : wardrobe
+function Wardrobe({ items, filter, onFilter, onItem, onMatch, onAdd, message }: {
+  items: WardrobeItem[]; filter: string; onFilter: (filter: string) => void
+  onItem: (id: string) => void; onMatch: () => void; onAdd: () => void; message: string
+}) {
+  const filters = ['Tất cả', ...categories]
+  const visibleItems = items.filter(item => filter === 'Tất cả' || item.category === filter)
   return <div className="screen-content">
-    <div className="title-row"><div><div className="eyebrow">BỘ SƯU TẬP CỦA BẠN</div><div className="page-title">Tủ đồ <span>12 món</span></div></div><div className="mini-avatar">Y</div></div>
-    {loading && <div className="saving"><span className="loader" /><div><b>Đang lưu vào tủ đồ...</b><small>AI đang tách từng món</small></div></div>}
-    <div className="chip-row">{filters.map(f => <Button key={f} className={`chip ${filter === f ? 'selected' : ''}`} onClick={() => setFilter(f)}>{f}</Button>)}</div>
+    <div className="title-row"><div><div className="eyebrow">BỘ SƯU TẬP CỦA BẠN</div><div className="page-title">Tủ đồ <span>{items.length} món</span></div></div><div className="mini-avatar">Y</div></div>
+    <p className="demo-note">Tủ đồ mẫu + món bạn xác nhận. Dữ liệu được giữ trong phiên; tải lại trang sẽ đặt lại.</p>
+    {message && <div className="flow-status" role="status">{message}</div>}
+    <div className="chip-row">{filters.map(f => <Button key={f} aria-pressed={filter === f} className={`chip ${filter === f ? 'selected' : ''}`} onClick={() => onFilter(f)}>{f}</Button>)}</div>
     <div className="wardrobe-grid">
-      {visibleItems.map((item, i) => <Button key={item.name} className={`wardrobe-card ${loading && i < 3 ? 'skeleton-card' : ''}`} onClick={onItem}>
+      {visibleItems.map(item => <Button key={item.id} className="wardrobe-card" onClick={() => onItem(item.id)}>
         <div className="garment-box"><ProductPhoto item={item} /></div>
         <div className="item-copy"><b>{item.name}</b><small>{item.tag}</small>{item.rare && <span className="rare">{item.rare}</span>}</div>
       </Button>)}
     </div>
+    {visibleItems.length === 0 && <div className="flow-empty"><b>{items.length ? 'Chưa có món thuộc nhóm này' : 'Tủ đồ đang trống'}</b><p>Thêm ảnh và xác nhận thông tin để lưu món vào tủ.</p><Button className="secondary wide" onClick={onAdd}>Thêm ảnh</Button></div>}
     <Button className="fab primary" onClick={onMatch}><Icon name="sparkle" /> Phối look mới</Button>
   </div>
 }
 
-function AddUpload({ onAnalyze }: { onAnalyze: () => void }) {
-  const photoTypes = [
-    { type: 'shirt', color: '#6D4AFF' },
-    { type: 'pants', color: '#242038' },
-    { type: 'shoe', color: '#E5D9C8' },
-  ]
-  const [photos, setPhotos] = useState<number[]>([])
-  const [agreed, setAgreed] = useState(false)
-  const removePhoto = (index: number) => setPhotos(current => current.filter(photo => photo !== index))
+function AddUpload({ photos, agreed, onConsent, onFiles, onRemove, onAnalyze, error, reading, pickerRef, hasDraft, onReview }: {
+  photos: UploadedPhoto[]; agreed: boolean; onConsent: (value: boolean) => void
+  onFiles: (event: ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void
+  onAnalyze: () => void; error: string; reading: boolean; pickerRef: RefObject<HTMLInputElement | null>
+  hasDraft: boolean; onReview: () => void
+}) {
   return <div className="screen-content add-upload">
     <div className="eyebrow">STUDIO / 01</div>
     <div className="page-title">Thêm ảnh</div>
     <p className="upload-subtitle">Áo quần, dáng chụp hay phông nền — cứ để lẫn.</p>
-    <div className={`upload-box ${photos.length ? 'has-photos' : ''}`} onClick={() => setPhotos([0, 1, 2])}>
-      {photos.length === 0 ? <>
+    <input ref={pickerRef} className="visually-hidden" type="file" accept="image/jpeg,image/png" multiple aria-label="Chọn ảnh JPG hoặc PNG" onChange={onFiles} disabled={reading} />
+    <div className={`upload-box ${photos.length ? 'has-photos' : ''}`}>
+      {photos.length === 0 ? <Button className="upload-picker" disabled={reading} onClick={() => pickerRef.current?.click()}>
         <div className="upload-plus"><Icon name="plus" size={24} /></div>
         <b>Chạm để thêm ảnh</b>
         <small>JPG, PNG · tối đa 10 ảnh/lượt</small>
-      </> : <>
+      </Button> : <>
         <div className="upload-count">{photos.length} ảnh đã chọn</div>
         <div className="upload-thumbnails">
-          {photos.map(i => <div className="upload-thumbnail" key={photoTypes[i].type} onClick={event => event.stopPropagation()}>
-            <Garment type={photoTypes[i].type} color={photoTypes[i].color} />
-            <Button className="remove-photo" onClick={() => removePhoto(i)}><Icon name="x" size={13} /></Button>
+          {photos.map(photo => <div className="upload-thumbnail" key={photo.id}>
+            <img src={photo.url} alt={photo.file.name} />
+            <Button className="remove-photo" aria-label={`Bỏ ảnh ${photo.file.name}`} disabled={reading} onClick={() => onRemove(photo.id)}><Icon name="x" size={13} /></Button>
           </div>)}
         </div>
+        <Button className="secondary wide add-more-photos" disabled={reading || photos.length >= 10} onClick={() => pickerRef.current?.click()}>Thêm ảnh</Button>
       </>}
     </div>
+    {reading && <div className="flow-status" role="status">Đang kiểm tra ảnh...</div>}
+    {error && <p className="flow-error" role="alert">{error}</p>}
     <div className="upload-privacy">
-      <div className="upload-privacy-head"><div className="privacy-icon"><Icon name="lock" size={20} /></div><div><b>Quyền riêng tư trước tiên</b><p>Chúng tôi sẽ xóa EXIF/GPS và làm mờ người khác trong ảnh</p></div></div>
-      <label className="consent-check"><input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} /><span><Icon name="check" size={15} /></span>Tôi đồng ý xử lý ảnh của mình, gồm ảnh cơ thể nếu có</label>
-      <div className="privacy-note">Bạn có thể xóa dữ liệu bất cứ lúc nào trong Cài đặt (chuông thông báo &gt; bánh răng)</div>
+      <div className="upload-privacy-head"><div className="privacy-icon"><Icon name="lock" size={20} /></div><div><b>Ảnh được giữ trong trình duyệt</b><p>Bản demo không gửi ảnh đến AI, chưa xóa EXIF/GPS hoặc làm mờ người trong ảnh.</p></div></div>
+      <label className="consent-check"><input type="checkbox" checked={agreed} onChange={e => onConsent(e.target.checked)} /><span><Icon name="check" size={15} /></span>Tôi đồng ý dùng ảnh của mình để thử luồng demo</label>
+      <div className="privacy-note">Ảnh và tủ đồ chỉ được giữ trong phiên. Tải lại trang sẽ đặt lại dữ liệu.</div>
     </div>
-    <Button className="primary wide analyze-button" disabled={!agreed || photos.length === 0} onClick={onAnalyze}>Phân tích với AI <Icon name="chevron" /></Button>
+    <Button className="primary wide analyze-button" disabled={!agreed || photos.length === 0 || reading} onClick={onAnalyze}>Phân tích với AI · demo <Icon name="chevron" /></Button>
+    {hasDraft && <Button className="secondary wide resume-review" onClick={onReview}>Tiếp tục kiểm tra bản nháp</Button>}
   </div>
 }
 
-function CaptureSheet({ onOk, onRetake }: { onOk: () => void; onRetake: () => void }) {
-  return <div className="overlay shade"><div className="sheet capture-sheet">
+function CaptureSheet({ photos, analyzeOutfit, onOption, onOk, onRetake }: {
+  photos: UploadedPhoto[]; analyzeOutfit: boolean; onOption: (value: boolean) => void; onOk: () => void; onRetake: () => void
+}) {
+  return <div className="overlay shade"><div className="sheet capture-sheet" role="dialog" aria-modal="true" aria-label="Chọn nội dung phân tích">
     <div className="sheet-handle" /><div className="sheet-title">Phân tích gì từ ảnh này?</div>
-    <div className="sheet-thumbnails">{[['shirt', '#6D4AFF'], ['pants', '#242038'], ['shoe', '#E5D9C8']].map(photo => <div key={photo[0]}><Garment type={photo[0]} color={photo[1]} /></div>)}</div>
-    {['Phân tích outfit', 'Phân tích pose (tư thế)', 'Phân tích nền (background)'].map((x, i) => <label className="check-row" key={x}><span><b>{x}</b><small>{i === 0 ? 'Tách quần áo và đọc thuộc tính' : 'Chỉ dùng khi có người trong ảnh'}</small></span><input type="checkbox" defaultChecked={i === 0} /><i><Icon name="check" size={15} /></i></label>)}
-    <div className="two-buttons"><Button className="secondary" onClick={onRetake}>Chọn lại ảnh</Button><Button className="primary" onClick={onOk}>OK</Button></div>
+    <div className="sheet-thumbnails">{photos.map(photo => <div key={photo.id}><img src={photo.url} alt={photo.file.name} /></div>)}</div>
+    <p className="demo-note">Demo tạo một món nháp cho mỗi ảnh. Bạn cần kiểm tra, sửa và xác nhận; chưa có AI nhận diện.</p>
+    <label className="check-row"><span><b>Phân tích outfit · demo</b><small>Tạo bản nháp để kiểm tra thông tin quần áo</small></span><input type="checkbox" checked={analyzeOutfit} onChange={event => onOption(event.target.checked)} /><i><Icon name="check" size={15} /></i></label>
+    {['Phân tích tư thế', 'Phân tích nền'].map(label => <label className="check-row unavailable" key={label}><span><b>{label}</b><small>Chưa hỗ trợ trong bản demo</small></span><input type="checkbox" disabled checked={false} readOnly /><i><Icon name="check" size={15} /></i></label>)}
+    <div className="two-buttons"><Button className="secondary" onClick={onRetake}>Chọn lại ảnh</Button><Button className="primary" disabled={!analyzeOutfit || !photos.length} onClick={onOk}>OK</Button></div>
   </div></div>
 }
 
-function ContextCollection({ onBack, onViewOutfits }: { onBack: () => void; onViewOutfits: () => void }) {
-  const weatherRows = [
-    ['10:00', 'Nhiều mây', '17°'],
-    ['13:00', 'Mưa', '80%'],
-    ['16:00', 'Có mây', '16°'],
-  ] as const
+function ContextCollection({ context, onChange, onBack, onViewOutfits, error, onAdd }: {
+  context: MatchContext; onChange: (context: MatchContext) => void; onBack: () => void
+  onViewOutfits: () => void; error: string; onAdd: () => void
+}) {
   return <div className="context-screen">
     <div className="ctx-status-bar"><span>07:30</span><div className="ctx-status-icons"><Icon name="signal" size={13} /><Icon name="wifi" size={13} /><Icon name="battery" size={13} /></div></div>
     <div className="ctx-header">
-      <Button className="ctx-icon-btn" onClick={onBack}><Icon name="back" /></Button>
+      <Button className="ctx-icon-btn" aria-label="Quay lại" onClick={onBack}><Icon name="back" /></Button>
       <Logo />
-      <Button className="ctx-icon-btn"><Icon name="sparkle" /></Button>
+      <span className="demo-badge">DEMO</span>
     </div>
     <div className="ctx-body">
       <div className="ctx-ai">
         <div className="ctx-ai-avatar"><Icon name="sparkle" size={17} /></div>
-        <div className="ctx-bubble">Mình đang thu thập thông tin để gợi ý outfit phù hợp nhất cho bạn...</div>
+        <div className="ctx-bubble">Chọn bối cảnh mẫu để thử phối đồ từ tủ của bạn. Dữ liệu lịch, vị trí và thời tiết bên dưới đều là demo.</div>
       </div>
       <div className="ctx-section">
-        <h2>Đã phân tích ngữ cảnh của bạn</h2>
-        <p>Dựa trên lịch trình, thời tiết, vị trí và thói quen di chuyển</p>
+        <h2>Bối cảnh phối đồ</h2>
+        <p>Thông tin mẫu, chưa kết nối lịch, vị trí hay thời tiết thực tế.</p>
+        <label className="context-select">Chọn bối cảnh<select aria-label="Chọn bối cảnh" value={context.id} onChange={event => { const next = contextPresets.find(preset => preset.id === event.target.value); if (next) onChange(next) }}>{contextPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
         <div className="ctx-cards">
           <div className="ctx-card ctx-event">
             <div className="ctx-card-head"><span className="ctx-card-icon"><Icon name="calendar" size={16} /></span><b>Sự kiện hôm nay</b></div>
-            <div className="ctx-card-main"><strong>Hackathon Pitching Day</strong><span>09:00 – 18:00</span><span className="ctx-loc"><Icon name="pin" size={12} /> Tokyo, Nhật Bản</span></div>
+            <div className="ctx-card-main"><strong>{context.event}</strong><span>{context.time}</span><span className="ctx-loc"><Icon name="pin" size={12} /> {context.location}</span></div>
           </div>
           <div className="ctx-card ctx-weather">
             <div className="ctx-card-head"><span className="ctx-card-icon"><Icon name="sun-cloud" size={16} /></span><b>Thời tiết</b></div>
-            <div className="ctx-card-main"><strong>16 – 19°C</strong><span>Nhiều mây, có lúc hửng nắng</span>
-              <div className="ctx-weather-list">{weatherRows.map(row => <div className="ctx-weather-row" key={row[0]}><b>{row[0]}</b><span>{row[1]}</span><i>{row[2]}</i></div>)}</div>
-            </div>
+            <div className="ctx-card-main"><strong>{context.temperature}</strong><span>{context.weather}</span></div>
           </div>
           <div className="ctx-card ctx-rain">
             <div className="ctx-card-head"><span className="ctx-card-icon"><Icon name="droplet" size={16} /></span><b>Khả năng mưa</b></div>
-            <div className="ctx-card-main ctx-rain-main"><strong>80%</strong><span>vào khoảng 13:00</span></div>
+            <div className="ctx-card-main ctx-rain-main"><strong>{context.rain}</strong><span>Dữ liệu thời tiết mẫu</span></div>
           </div>
           <div className="ctx-card ctx-commute">
             <div className="ctx-card-head"><span className="ctx-card-icon"><Icon name="train" size={16} /></span><b>Di chuyển</b></div>
-            <div className="ctx-card-main"><strong>Đi bộ kết hợp tàu điện</strong><span>Dự kiến di chuyển giữa các ga và đi bộ đến địa điểm sự kiện</span></div>
+            <div className="ctx-card-main"><strong>{context.commute}</strong><span>Phương án di chuyển mẫu</span></div>
           </div>
           <div className="ctx-card ctx-style">
             <div className="ctx-card-head"><span className="ctx-card-icon"><Icon name="shirt" size={16} /></span><b>Phong cách ưu tiên</b></div>
-            <div className="ctx-card-main"><strong>Formal, thanh lịch, thoải mái</strong><span>Phù hợp cho pitching và networking</span></div>
+            <div className="ctx-card-main"><strong>{context.style}</strong><span>Gợi ý theo bối cảnh {context.label.toLocaleLowerCase('vi')}</span></div>
           </div>
         </div>
       </div>
       <div className="ctx-ready">
         <div className="ctx-ready-icon"><Icon name="sparkle" size={19} /></div>
-        <h3>Đã sẵn sàng gợi ý outfit!</h3>
-        <p>Dựa trên các thông tin trên và tủ đồ hiện có của bạn, mình đã chuẩn bị 3 outfit phù hợp nhất.</p>
+        <h3>Sẵn sàng thử 3 outfit demo?</h3>
+        <p>Bản demo ghép các món hiện có trong tủ. Ảnh outfit chỉ là minh họa, chưa có AI chấm độ phù hợp.</p>
+        {error && <div className="flow-error" role="alert">{error}<Button className="secondary wide" onClick={onAdd}>Thêm ảnh vào tủ</Button></div>}
         <Button className="ctx-cta" onClick={onViewOutfits}>Xem 3 outfit gợi ý <Icon name="chevron" size={15} /></Button>
       </div>
     </div>
@@ -287,30 +333,61 @@ const outfitPhotos: Record<string, string[]> = {
   ],
 }
 
-function MatchCards({ context, onEdit, onTry, onContext, onBell, onFinish }: { context: string; onEdit: () => void; onTry: () => void; onContext: () => void; onBell: () => void; onFinish: () => void }) {
-  const [look, setLook] = useState(2)
-  const [toast, setToast] = useState(false)
+// Fixture phối đồ theo ID thật trong tủ; ảnh Unsplash chỉ minh họa phong cách.
+function createMatchSession(context: MatchContext, items: WardrobeItem[]): MatchSession | null {
+  const tops = items.filter(item => item.category === 'Áo')
+  const bottoms = items.filter(item => item.category === 'Quần' || item.category === 'Váy')
+  const shoes = items.filter(item => item.category === 'Giày')
+  const bags = items.filter(item => item.category === 'Túi')
+  if (!tops.length || !bottoms.length || !shoes.length) return null
+  const id = crypto.randomUUID()
+  const names = ['Thanh lịch mỗi ngày', 'Thoải mái di chuyển', 'Điểm nhấn riêng']
+  const outfits = names.map((name, index) => ({
+    id: `${id}-${index + 1}`, number: index + 1, name,
+    image: `https://images.unsplash.com/${outfitPhotos[context.label][index]}?auto=format&fit=crop&w=900&q=84`,
+    itemIds: [tops[index % tops.length].id, bottoms[index % bottoms.length].id, shoes[index % shoes.length].id, ...(bags.length ? [bags[index % bags.length].id] : [])],
+  }))
+  return { id, context: { ...context }, outfits, items: [...items], index: 0, decisions: {}, selectedOutfitId: null }
+}
+
+function recordDecision(session: MatchSession, outfitId: string, liked: boolean): MatchSession {
+  if (session.outfits[session.index]?.id !== outfitId) return session
+  const previousDecisions = Object.fromEntries(Object.entries(session.decisions).filter(([id]) => id !== outfitId))
+  const decisions = { ...previousDecisions, [outfitId]: liked ? 'like' as const : 'dislike' as const }
+  const selectedOutfitId = liked ? outfitId : session.selectedOutfitId === outfitId
+    ? Object.keys(decisions).reverse().find(id => decisions[id] === 'like') ?? null
+    : session.selectedOutfitId
+  return { ...session, decisions, selectedOutfitId, index: session.index + 1 }
+}
+
+function MatchCards({ session, onDecision, onContext, onFinish, onRestart }: {
+  session: MatchSession; onDecision: (id: string, liked: boolean) => void
+  onContext: () => void; onFinish: () => void; onRestart: () => void
+}) {
   const [dragX, setDragX] = useState(0)
   const [transitioning, setTransitioning] = useState(false)
   const [animating, setAnimating] = useState(false)
+  const animationLock = useRef(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragStart = useRef<number | null>(null)
   const dragDistance = useRef(0)
+  const outfit = session.outfits[session.index]
+  const nextOutfit = session.outfits[session.index + 1]
   const dragDirection = dragX === 0 ? 1 : Math.sign(dragX)
   const nextOffset = dragDirection * -Math.max(0, 100 - Math.min(Math.abs(dragX) / 3.9, 100))
 
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+
   const dismiss = (liked: boolean) => {
-    if (animating) return
-    const direction = liked ? 1 : -1
+    if (animationLock.current || !outfit) return
+    if (timer.current) clearTimeout(timer.current)
+    animationLock.current = true
     setAnimating(true)
     setTransitioning(true)
-    setDragX(direction * 480)
-    if (liked) {
-      setToast(true)
-      window.setTimeout(() => setToast(false), 900)
-    }
-    window.setTimeout(() => {
-      if (look >= 7) { onFinish(); return }
-      setLook(look + 1)
+    setDragX((liked ? 1 : -1) * 480)
+    timer.current = setTimeout(() => {
+      onDecision(outfit.id, liked)
+      animationLock.current = false
       setTransitioning(false)
       setDragX(0)
       setAnimating(false)
@@ -318,95 +395,86 @@ function MatchCards({ context, onEdit, onTry, onContext, onBell, onFinish }: { c
   }
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (animating || (event.target as HTMLElement).closest('button')) return
+    if (animationLock.current || (event.target as HTMLElement).closest('button')) return
+    if (timer.current) clearTimeout(timer.current)
     dragStart.current = event.clientX
+    dragDistance.current = 0
     event.currentTarget.setPointerCapture(event.pointerId)
     setTransitioning(false)
   }
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (dragStart.current === null || animating) return
+    if (dragStart.current === null || animationLock.current) return
     dragDistance.current = event.clientX - dragStart.current
     setDragX(dragDistance.current)
   }
 
   const finishDrag = (event: PointerEvent<HTMLDivElement>) => {
-    if (dragStart.current === null || animating) return
-    event.currentTarget.releasePointerCapture(event.pointerId)
+    if (dragStart.current === null || animationLock.current) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     dragStart.current = null
-    if (Math.abs(dragDistance.current) >= 70) dismiss(dragDistance.current > 0)
+    if (event.type !== 'pointercancel' && Math.abs(dragDistance.current) >= 70) dismiss(dragDistance.current > 0)
     else {
       setTransitioning(true)
       setDragX(0)
-      window.setTimeout(() => setTransitioning(false), 260)
+      timer.current = setTimeout(() => setTransitioning(false), 320)
     }
     dragDistance.current = 0
   }
 
-  const renderCard = (cardLook: number, current = false) => <div
+  const renderCard = (card: Outfit, current = false) => <div
     className={`swipe-card ${transitioning ? 'transitioning' : ''} ${current ? 'current-card' : 'next-card'}`}
     style={{ transform: current ? `translateX(${dragX}px) rotate(${dragX / 45}deg)` : `translateX(${nextOffset}%)` }}
   >
-    <div className="match-scene"><img className="outfit-photo" src={`https://images.unsplash.com/${outfitPhotos[context][cardLook]}?auto=format&fit=crop&w=900&q=84`} alt={`Ảnh minh họa outfit ${cardLook + 1} trong bối cảnh ${context}`} /></div>
+    <div className="match-scene"><ProductPhoto item={{ name: `Ảnh minh họa outfit ${card.number}: ${card.name}`, image: card.image }} /></div>
     <div className="look-gradient" />
-    <div className="look-copy"><div className="model-label">ẢNH MINH HỌA</div><div className="look-title">Violet in the rain</div><div className="score-line"><span>Độ hợp 82%</span><b>Dùng áo đã 41 ngày chưa mặc</b></div></div>
+    <div className="look-copy"><div className="model-label">PHỐI ĐỒ DEMO · ẢNH MINH HỌA</div><div className="look-title">{card.name}</div><div className="score-line"><span>{session.context.label}</span><b>{session.context.event}</b></div><div className="card-item-names">{card.itemIds.map(id => session.items.find(item => item.id === id)?.name).join(' · ')}</div></div>
   </div>
+
+  if (!outfit) return <div className="match-card-screen completed-deck"><Logo /><div className="flow-empty"><h2>{session.selectedOutfitId ? 'Đã xem hết 3 outfit' : 'Bạn chưa chọn outfit nào'}</h2><p>{session.selectedOutfitId ? 'Outfit được thích gần nhất là lựa chọn hiện tại.' : 'Bạn đã bỏ cả 3 outfit. Xem lại để chọn hoặc thử bối cảnh khác.'}</p>{session.selectedOutfitId && <Button className="primary wide" onClick={onFinish}>Xem kết quả</Button>}<Button className="secondary wide" onClick={onRestart}>Xem lại 3 outfit</Button><Button className="secondary wide" onClick={onContext}>Đổi bối cảnh</Button></div></div>
 
   return <div className="match-card-screen">
     <div className="swipe-deck" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={finishDrag} onPointerCancel={finishDrag}>
-      {renderCard((look + 1) % 8)}
-      {renderCard(look, true)}
+      {nextOutfit && renderCard(nextOutfit)}
+      {renderCard(outfit, true)}
     </div>
-    <div className="match-header"><Logo inverse /><div className="match-header-actions"><div className="weather">29°</div><Button className="icon-button bell" onClick={onBell}><Icon name="bell" /><i /></Button></div></div>
-    <div className="match-top"><span>{look + 1}/8 bộ hôm nay</span><div className="match-top-actions"><Button className="glass-link" onClick={onContext}>Đổi bối cảnh</Button><Button className="result-pill" onClick={onFinish}><Icon name="sparkle" size={13} /> Xem kết quả</Button></div></div>
-    {toast && <div className="saved-toast"><Icon name="check" size={16} /> Đã lưu</div>}
+    <div className="match-header"><Logo inverse /><div className="match-header-actions"><div className="weather">{session.context.temperature} · mẫu</div></div></div>
+    <div className="match-top"><span>{session.index + 1}/{session.outfits.length} outfit</span><div className="match-top-actions"><Button className="glass-link" disabled={animating} onClick={onContext}>Đổi bối cảnh</Button><Button className="result-pill" disabled={animating || !session.selectedOutfitId} onClick={onFinish}><Icon name="sparkle" size={13} /> Xem kết quả</Button></div></div>
+    <div className="saved-toast" role="status">{session.selectedOutfitId ? 'Đã thích trong phiên · chọn lượt thích gần nhất' : 'Thích một outfit để xem kết quả'}</div>
     <div className="action-stack">
-      <Button className="action-item" onClick={() => dismiss(false)}><span className="round-action reject"><Icon name="x" /></span><small>Bỏ</small></Button>
-      <Button className="action-item" onClick={() => dismiss(true)}><span className="round-action love"><Icon name="heart" /></span><small>Thích</small></Button>
-      <Button className="action-item" onClick={onEdit}><span className="round-action adjust"><Icon name="sliders" /></span><small>Chỉnh</small></Button>
-      <Button className="action-item" onClick={onTry}><span className="round-action try"><Icon name="shirt" /></span><small>Thử đồ ảo</small></Button>
+      <Button className="action-item" disabled={animating} onClick={() => dismiss(false)}><span className="round-action reject"><Icon name="x" /></span><small>Bỏ</small></Button>
+      <Button className="action-item" disabled={animating} onClick={() => dismiss(true)}><span className="round-action love"><Icon name="heart" /></span><small>Thích</small></Button>
+      <Button className="action-item" disabled title="Chưa hỗ trợ trong luồng demo"><span className="round-action adjust"><Icon name="sliders" /></span><small>Chỉnh · chưa hỗ trợ</small></Button>
+      <Button className="action-item" disabled title="Chưa hỗ trợ trong luồng demo"><span className="round-action try"><Icon name="shirt" /></span><small>Thử đồ · chưa hỗ trợ</small></Button>
     </div>
   </div>
 }
 
-function ImpactResult({ context, onBack, onReview, onShare }: { context: string; onBack: () => void; onReview: () => void; onShare: () => void }) {
-  const [saved, setSaved] = useState(false)
-  const [toast, setToast] = useState(false)
+function ImpactResult({ session, outfit, onBack, onReview }: { session: MatchSession; outfit: Outfit; onBack: () => void; onReview: () => void }) {
   const [showInfo, setShowInfo] = useState(false)
   const metrics = [
     { icon: 'trophy', value: 'Top 8%', desc: 'người dùng tận dụng tủ đồ hiệu quả' },
     { icon: 'cloud-co2', value: '6 kg', desc: 'CO₂e tránh phát thải ước tính' },
     { icon: 'tree', value: '3 tháng', desc: 'hấp thụ CO₂ của một cây trưởng thành' },
   ]
-  const items = [
-    ['shirt', 'Áo sơ mi trắng'],
-    ['jacket', 'Blazer đen'],
-    ['pants', 'Quần tây đen'],
-    ['shoe', 'Giày da đen'],
-    ['tie', 'Cà vạt đen sọc chéo xám'],
-  ] as const
-  const saveToCalendar = () => {
-    if (saved) return
-    setSaved(true)
-    setToast(true)
-    window.setTimeout(() => setToast(false), 2400)
-  }
+  const items = outfit.itemIds.flatMap(id => session.items.filter(item => item.id === id))
   return <div className="result-screen">
     <div className="ctx-status-bar"><span>07:30</span><div className="ctx-status-icons"><Icon name="signal" size={13} /><Icon name="wifi" size={13} /><Icon name="battery" size={13} /></div></div>
     <div className="ctx-header">
-      <Button className="ctx-icon-btn" onClick={onBack}><Icon name="back" /></Button>
+      <Button className="ctx-icon-btn" aria-label="Quay lại outfit đã chọn" onClick={onBack}><Icon name="back" /></Button>
       <Logo />
-      <Button className="ctx-icon-btn" onClick={onShare}><Icon name="share" /></Button>
+      <Button className="ctx-icon-btn" disabled aria-label="Chia sẻ chưa hỗ trợ" title="Chia sẻ chưa hỗ trợ"><Icon name="share" /></Button>
     </div>
     <div className="result-body">
       <div className="result-hero">
-        <h1>Cảm ơn Tim! 🌱</h1>
-        <p>Bạn đã chọn outfit phù hợp từ tủ đồ hiện có.</p>
+        <h1>Outfit bạn đã chọn</h1>
+        <p>Lựa chọn được thích gần nhất, giữ trong phiên ứng dụng.</p>
         <p className="result-hero-sub">Mỗi lần mặc thông minh hơn là một bước tiến vì hành tinh xanh hơn.</p>
       </div>
       <div className="impact-card">
-        <div className="impact-card-head"><b>TÁC ĐỘNG TỪ GARBLO CỦA BẠN</b><Button className="impact-info-btn" onClick={() => setShowInfo(v => !v)} aria-label="Giải thích cách tính chỉ số"><Icon name="info" size={15} /></Button></div>
-        {showInfo && <div className="impact-note">Chỉ số demo ước tính dựa trên tần suất mặc lại đồ có sẵn — chưa được xác minh khoa học.</div>}
+        <div className="impact-card-head"><b>CHỈ SỐ TÁC ĐỘNG · DEMO</b><Button className="impact-info-btn" onClick={() => setShowInfo(v => !v)} aria-expanded={showInfo} aria-label="Giải thích chỉ số demo"><Icon name="info" size={15} /></Button></div>
+        <p className="demo-note">Số liệu mẫu, không được tính từ outfit hoặc hoạt động của bạn.</p>
+        {showInfo && <div className="impact-note">Các giá trị cố định chỉ minh họa giao diện, chưa có cơ chế đo lường hay xác minh khoa học.</div>}
         <div className="impact-metrics">{metrics.map(m => <div className="impact-metric" key={m.value}><span className="impact-metric-icon"><Icon name={m.icon} size={18} /></span><strong>{m.value}</strong><small>{m.desc}</small></div>)}</div>
       </div>
       <div className="nature-banner">
@@ -414,17 +482,19 @@ function ImpactResult({ context, onBack, onReview, onShare }: { context: string;
         <div className="nature-copy">Mặc thông minh hơn<br />vì một hành tinh xanh hơn. 🌱</div>
       </div>
       <div className="outfit-card">
-        <div className="outfit-card-head"><b>Outfit đã chọn</b><span>Hôm nay · Hackathon Pitching Day</span></div>
-        <div className="outfit-label"><span>OUTFIT 03</span><div><strong>{'CONFIDENT & ELEGANT'}</strong><Icon name="star" size={16} /></div></div>
-        <div className="outfit-photo-wrap"><img src={`https://images.unsplash.com/${outfitPhotos[context][2]}?auto=format&fit=crop&w=900&q=84`} alt="Outfit 03 CONFIDENT & ELEGANT" /></div>
-        <div className="outfit-items">{items.map(([icon, name]) => <div className="outfit-item" key={name}><span className="outfit-item-icon"><Icon name={icon} size={16} /></span><span>{name}</span></div>)}</div>
+        <div className="outfit-card-head"><b>Outfit đã chọn</b><span>{session.context.label} · {session.context.event}</span></div>
+        <p className="demo-note">{session.context.temperature} · {session.context.weather} · {session.context.commute} (bối cảnh mẫu)</p>
+        <div className="outfit-label"><span>OUTFIT {String(outfit.number).padStart(2, '0')}</span><div><strong>{outfit.name}</strong><Icon name="star" size={16} /></div></div>
+        <div className="outfit-photo-wrap"><ProductPhoto item={{ name: `Ảnh minh họa outfit ${outfit.number}: ${outfit.name}`, image: outfit.image }} /></div>
+        <p className="demo-note">Ảnh minh họa phong cách, không phải ảnh AI ghép từ các món bên dưới.</p>
+        <div className="outfit-items">{items.map(item => <div className="outfit-item" key={item.id}><span className="outfit-item-photo"><ProductPhoto item={item} /></span><span><b>{item.name}</b><small>{item.category} · {item.color} · {item.style}</small></span></div>)}</div>
         <div className="outfit-actions">
           <Button className="outfit-btn secondary" onClick={onReview}><Icon name="hanger" size={16} /> Xem lại outfit</Button>
-          <Button className="outfit-btn primary" disabled={saved} onClick={saveToCalendar}><Icon name="calendar" size={16} /> {saved ? 'Đã lưu vào lịch' : 'Lưu vào lịch'}</Button>
+          <Button className="outfit-btn primary" disabled title="Chưa tích hợp lịch"><Icon name="calendar" size={16} /> Lưu vào lịch</Button>
         </div>
+        <p className="demo-note">Lưu vào lịch chưa được hỗ trợ. Không có dữ liệu nào được gửi đến lịch của bạn.</p>
       </div>
     </div>
-    {toast && <div className="result-toast"><Icon name="check" size={15} /> Đã lưu outfit vào lịch của bạn</div>}
   </div>
 }
 
@@ -467,21 +537,34 @@ function Community({ onShare }: { onShare: () => void }) {
   </div>
 }
 
-function ItemDetail({ onClose }: { onClose: () => void }) {
-  const [tags, setTags] = useState(['Áo sơ mi', 'Violet', 'Cotton', 'Street'])
-  const alternatives = ['Áo khoác', 'Tím đậm', 'Linen', 'Tối giản']
-  const updateTag = (index: number) => setTags(current => current.map((value, i) => i === index ? (value === alternatives[index] ? ['Áo sơ mi', 'Violet', 'Cotton', 'Street'][index] : alternatives[index]) : value))
-  return <div className="full-overlay white">
-    <Header title="AI đọc ảnh" onBack={onClose} />
+function ItemDetail({ items, photoCount, reviewing, onChange, onClose, onSave }: {
+  items: WardrobeItem[]; photoCount: number; reviewing: boolean
+  onChange: (id: string, patch: Partial<WardrobeItem>) => void; onClose: () => void; onSave: () => void
+}) {
+  const [activeId, setActiveId] = useState(items[0]?.id)
+  const item = items.find(candidate => candidate.id === activeId) ?? items[0]
+  const index = items.findIndex(candidate => candidate.id === item?.id)
+  const valid = items.length > 0 && items.every(candidate => candidate.name.trim())
+  return <div className="full-overlay white" role="dialog" aria-modal="true" aria-label={reviewing ? 'Kiểm tra kết quả phân tích demo' : 'Chi tiết món đồ'}>
+    <Header title={reviewing ? 'AI đọc ảnh · demo' : 'Chi tiết món đồ'} onBack={onClose} />
     <div className="overlay-content">
-      <div className="source-strip"><div><Garment type="shirt" color="#6D4AFF" /></div><div><span>ẢNH GỐC</span><b>Từ 1 ảnh, AI tách được 3 món</b><small>Kiểm tra và sửa trước khi lưu</small></div></div>
-      <div className="detected-card"><div className="detected-image"><Garment type="shirt" color="#6D4AFF" /></div><div className="detected-head"><div><span>MÓN 1/3</span><b>Áo sơ mi violet</b></div><i>tin cậy 94%</i></div>
-        <div className="tag-grid">{['Loại', 'Màu', 'Chất liệu', 'Phong cách'].map((label, i) => <Button key={label} onClick={() => updateTag(i)}><span>{label}</span><b>{tags[i]}</b><Icon name="chevron" size={15} /></Button>)}</div>
-      </div>
-      <div className="small-detected"><Garment type="pants" color="#26203A" /><div><span>MÓN 2/3 · tin cậy 91%</span><b>Quần ống rộng</b></div><Icon name="chevron" /></div>
-      <div className="small-detected"><Garment type="shoe" color="#D8CDB8" /><div><span>MÓN 3/3 · tin cậy 88%</span><b>Sneaker kem</b></div><Icon name="chevron" /></div>
+      {item ? <>
+        <div className="source-strip"><div><ProductPhoto item={item} /></div><div><span>{item.sourcePhotoId ? 'ẢNH GỐC' : 'TỦ ĐỒ MẪU'}</span><b>{reviewing ? `${photoCount} ảnh · ${items.length} món nháp` : item.name}</b><small>{reviewing ? 'Kiểm tra và sửa trước khi lưu' : 'Thông tin đang lưu trong phiên'}</small></div></div>
+        {reviewing && <p className="demo-note">Kết quả phân tích demo: một món nháp cho mỗi ảnh. Loại và thuộc tính là giá trị mẫu, chưa được AI nhận diện. Ảnh bên dưới là ảnh gốc, chưa tách món.</p>}
+        <div className="detected-card"><div className="detected-image"><ProductPhoto item={item} /></div><div className="detected-head"><div><span>MÓN {index + 1}/{items.length}</span><b>{item.name || 'Chưa đặt tên'}</b></div><i>{reviewing ? 'Bản nháp demo' : 'Đã lưu trong phiên'}</i></div>
+          <div className="review-fields">
+            <label className="full-field">Tên món<input value={item.name} maxLength={100} required aria-invalid={!item.name.trim()} onChange={event => onChange(item.id, { name: event.target.value })} /></label>
+            {!item.name.trim() && <p className="flow-error full-field" role="alert">Nhập tên món trước khi lưu.</p>}
+            <label>Loại<select aria-label="Loại" value={item.category} onChange={event => { const category = event.target.value as Category; onChange(item.id, { category, type: categoryTypes[category] }) }}>{categories.map(category => <option key={category}>{category}</option>)}</select></label>
+            <label>Màu<input value={item.color} maxLength={60} onChange={event => onChange(item.id, { color: event.target.value })} /></label>
+            <label>Chất liệu<input value={item.material} maxLength={60} onChange={event => onChange(item.id, { material: event.target.value })} /></label>
+            <label>Phong cách<input value={item.style} maxLength={60} onChange={event => onChange(item.id, { style: event.target.value })} /></label>
+          </div>
+        </div>
+        {items.length > 1 && <div className="review-item-list" aria-label="Chọn món để kiểm tra">{items.map((candidate, itemIndex) => <Button key={candidate.id} className={`small-detected ${candidate.id === item.id ? 'selected' : ''}`} aria-pressed={candidate.id === item.id} onClick={() => setActiveId(candidate.id)}><ProductPhoto item={candidate} /><div><span>MÓN {itemIndex + 1}/{items.length}</span><b>{candidate.name || 'Chưa đặt tên'}</b></div><Icon name="chevron" /></Button>)}</div>}
+      </> : <div className="flow-empty">Chưa có món để kiểm tra. Quay lại và chọn ảnh.</div>}
     </div>
-    <div className="sticky-action"><Button className="primary wide" onClick={onClose}>Lưu 3 món vào tủ</Button></div>
+    <div className="sticky-action"><Button className="primary wide" disabled={!valid} onClick={onSave}>{reviewing ? `Xác nhận và lưu ${items.length} món vào tủ` : 'Lưu thay đổi vào tủ'}</Button><small>Lưu trong phiên ứng dụng</small></div>
   </div>
 }
 
@@ -546,39 +629,219 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('wardrobe')
   const [overlay, setOverlay] = useState<Overlay>('none')
   const [captureSheet, setCaptureSheet] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [hasNewItems, setHasNewItems] = useState(false)
+  const [photos, setPhotos] = useState<UploadedPhoto[]>([])
+  const [agreed, setAgreed] = useState(false)
+  const [reading, setReading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const [analyzeOutfit, setAnalyzeOutfit] = useState(true)
+  const [draft, setDraft] = useState<AnalysisDraft | null>(null)
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle')
+  const [items, setItems] = useState(initialWardrobe)
+  const [filter, setFilter] = useState('Tất cả')
+  const [message, setMessage] = useState('')
+  const [detailMode, setDetailMode] = useState<'draft' | 'saved'>('draft')
+  const [editedItem, setEditedItem] = useState<WardrobeItem | null>(null)
   const [matchStage, setMatchStage] = useState<'context' | 'cards' | 'result'>('context')
-  const [matchContext, setMatchContext] = useState('Đi làm')
-  const changeTab = (next: Tab) => {
+  const [matchContext, setMatchContext] = useState(contextPresets[0])
+  const [session, setSession] = useState<MatchSession | null>(null)
+  const [contextError, setContextError] = useState('')
+  const [contextOrigin, setContextOrigin] = useState<'wardrobe' | 'cards'>('wardrobe')
+  const pickerRef = useRef<HTMLInputElement>(null)
+  const analysisTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const savedBatches = useRef(new Set<string>())
+  const objectUrls = useRef(new Set<string>())
+  const pendingUrls = useRef(new Set<string>())
+  const mounted = useRef(true)
+  const readingLock = useRef(false)
+  const frameRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    mounted.current = true
+    const urls = objectUrls.current
+    return () => {
+      mounted.current = false
+      if (analysisTimer.current) clearTimeout(analysisTimer.current)
+      urls.forEach(url => URL.revokeObjectURL(url))
+      urls.clear()
+    }
+  }, [])
+
+  useEffect(() => {
+    const retained = new Set([
+      ...photos.map(photo => photo.url), ...(draft?.photos.map(photo => photo.url) ?? []),
+      ...items.map(item => item.image), ...(session?.items.map(item => item.image) ?? []),
+    ])
+    objectUrls.current.forEach(url => {
+      if (!retained.has(url) && !pendingUrls.current.has(url)) {
+        URL.revokeObjectURL(url)
+        objectUrls.current.delete(url)
+      }
+    })
+  }, [photos, draft, items, session])
+
+  const closeOverlay = () => {
+    if (analysisTimer.current) clearTimeout(analysisTimer.current)
+    analysisTimer.current = null
+    setAnalysisStatus('idle')
     setOverlay('none')
+  }
+
+  // Focus stays in the two Happy Path dialogs; Escape preserves the review draft.
+  useEffect(() => {
+    if (!captureSheet && overlay !== 'item') return
+    const dialog = frameRef.current?.querySelector<HTMLElement>('[role="dialog"]')
+    if (!dialog) return
+    const previous = document.activeElement as HTMLElement | null
+    const getFocusable = () => Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]'))
+    getFocusable()[0]?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (captureSheet) setCaptureSheet(false)
+        else closeOverlay()
+      }
+      if (event.key === 'Tab') {
+        const elements = getFocusable()
+        const first = elements[0]
+        const last = elements[elements.length - 1]
+        if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) { event.preventDefault(); last?.focus() }
+        else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) { event.preventDefault(); first?.focus() }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => { document.removeEventListener('keydown', onKeyDown); if (previous?.isConnected) previous.focus() }
+  }, [captureSheet, overlay, analysisStatus])
+
+  const handleFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (!files.length || readingLock.current) return
+    setUploadError('')
+    if (files.length + photos.length > 10) { setUploadError('Tối đa 10 ảnh/lượt. Hãy chọn ít ảnh hơn hoặc bỏ bớt ảnh đã chọn.'); return }
+    if (files.some(file => !['image/jpeg', 'image/png'].includes(file.type))) { setUploadError('Chỉ hỗ trợ ảnh JPG hoặc PNG. Vui lòng chọn lại.'); return }
+    readingLock.current = true
+    setReading(true)
+    const created: UploadedPhoto[] = []
+    try {
+      for (const file of files) {
+        const url = URL.createObjectURL(file)
+        objectUrls.current.add(url)
+        pendingUrls.current.add(url)
+        const photo = { id: crypto.randomUUID(), file, url }
+        created.push(photo)
+        await new Promise<void>((resolve, reject) => {
+          const image = new Image()
+          const timeout = setTimeout(() => { image.onload = null; image.onerror = null; image.src = ''; reject(new Error('Không đọc được ảnh')) }, 10000)
+          image.onload = () => { clearTimeout(timeout); image.onload = null; image.onerror = null; resolve() }
+          image.onerror = () => { clearTimeout(timeout); image.onload = null; image.onerror = null; reject(new Error('Ảnh bị lỗi')) }
+          image.src = url
+        })
+        if (!mounted.current) return
+      }
+      if (mounted.current) setPhotos(current => [...current, ...created])
+    } catch {
+      created.forEach(photo => { URL.revokeObjectURL(photo.url); objectUrls.current.delete(photo.url) })
+      if (mounted.current) setUploadError('Không đọc được ảnh đã chọn. Hãy thử lại bằng ảnh JPG/PNG khác.')
+    } finally {
+      created.forEach(photo => pendingUrls.current.delete(photo.url))
+      readingLock.current = false
+      if (mounted.current) setReading(false)
+    }
+  }
+
+  const changeTab = (next: Tab) => {
+    if (next === tab) return
+    closeOverlay()
     setCaptureSheet(false)
     setTab(next)
-    if (next === 'match') setMatchStage('context')
   }
   const finishCapture = () => {
+    if (!photos.length || !agreed || !analyzeOutfit || analysisTimer.current) return
     setCaptureSheet(false)
-    setTab('wardrobe')
-    setHasNewItems(true)
-    setLoading(true)
-    setTimeout(() => setLoading(false), 1500)
+    setDetailMode('draft')
+    setDraft(null)
+    setOverlay('item')
+    setAnalysisStatus('loading')
+    // Timer only simulates preparation of a clearly labelled FE fixture.
+    analysisTimer.current = setTimeout(() => {
+      analysisTimer.current = null
+      try { setDraft(createDemoDraft(photos)); setAnalysisStatus('idle') }
+      catch { setAnalysisStatus('error') }
+    }, 650)
   }
-  const closeOverlay = () => setOverlay('none')
+  const updateItem = (id: string, patch: Partial<WardrobeItem>) => {
+    if (detailMode === 'draft') setDraft(current => current ? { ...current, items: current.items.map(item => item.id === id ? { ...item, ...patch } : item) } : null)
+    else setEditedItem(current => current?.id === id ? { ...current, ...patch } : current)
+  }
+  const saveItems = () => {
+    const candidates = detailMode === 'draft' ? draft?.items : editedItem ? [editedItem] : []
+    if (!candidates?.length || candidates.some(item => !item.name.trim())) return
+    const confirmed = candidates.map(item => ({ ...item, name: item.name.trim(), color: item.color.trim() || 'Chưa xác định', material: item.material.trim() || 'Chưa xác định', style: item.style.trim() || 'Chưa xác định', tag: `${item.category} · ${item.style.trim() || 'Chưa xác định'}` }))
+    if (detailMode === 'draft') {
+      if (!draft || savedBatches.current.has(draft.id)) return
+      savedBatches.current.add(draft.id)
+      setItems(current => [...confirmed, ...current])
+      setMessage(`Đã lưu ${confirmed.length} món bạn xác nhận trong phiên.`)
+      const savedPhotoIds = new Set(draft.photos.map(photo => photo.id))
+      setPhotos(current => current.filter(photo => !savedPhotoIds.has(photo.id)))
+      setDraft(null)
+      setAgreed(false)
+    } else {
+      setItems(current => current.map(item => confirmed.find(candidate => candidate.id === item.id) ?? item))
+      setEditedItem(null)
+      setMessage('Đã cập nhật món đồ trong phiên.')
+    }
+    setFilter('Tất cả')
+    closeOverlay()
+    setTab('wardrobe')
+  }
+  const startMatch = () => {
+    // Return to an existing session only when both its context and wardrobe snapshot match.
+    if (session?.context.id === matchContext.id && session.items.length === items.length && session.items.every((item, index) => item === items[index])) {
+      setContextError('')
+      setMatchStage('cards')
+      return
+    }
+    const next = createMatchSession(matchContext, items)
+    if (!next) { setContextError('Cần ít nhất một áo, một quần hoặc váy, và một đôi giày trong tủ để tạo outfit demo.'); return }
+    setSession(next)
+    setContextError('')
+    setMatchStage('cards')
+  }
+  const decide = (id: string, liked: boolean) => {
+    if (!session) return
+    const next = recordDecision(session, id, liked)
+    setSession(next)
+    if (next.index === next.outfits.length && next.selectedOutfitId) setMatchStage('result')
+  }
+  const reviewSelected = () => {
+    if (!session) return
+    const index = session.outfits.findIndex(outfit => outfit.id === session.selectedOutfitId)
+    setSession({ ...session, index: Math.max(0, index) })
+    setMatchStage('cards')
+  }
+  const openContext = (origin: 'wardrobe' | 'cards') => {
+    setContextOrigin(origin)
+    setContextError('')
+    setTab('match')
+    setMatchStage('context')
+  }
+  const selectedOutfit = session?.outfits.find(outfit => outfit.id === session.selectedOutfitId)
   const isMatchCard = tab === 'match' && matchStage === 'cards'
   const isContextScreen = tab === 'match' && matchStage === 'context'
   const isResultScreen = tab === 'match' && matchStage === 'result'
-  return <div className={`app-frame ${isMatchCard ? 'match-mode' : ''} ${isContextScreen ? 'context-mode' : ''} ${isResultScreen ? 'result-mode' : ''}`}>
+  return <div ref={frameRef} className={`app-frame ${isMatchCard ? 'match-mode' : ''} ${isContextScreen ? 'context-mode' : ''} ${isResultScreen ? 'result-mode' : ''} ${captureSheet || overlay === 'item' ? 'flow-dialog-open' : ''}`}>
     {!isMatchCard && !isContextScreen && !isResultScreen && <Header onBell={() => setOverlay('notifications')} />}
-    <main>
-      {tab === 'add' && <AddUpload onAnalyze={() => setCaptureSheet(true)} />}
-      {tab === 'wardrobe' && <Wardrobe loading={loading} hasNewItems={hasNewItems} onItem={() => setOverlay('item')} onMatch={() => { setTab('match'); setMatchStage('context') }} />}
-      {tab === 'match' && (matchStage === 'context' ? <ContextCollection onBack={() => setTab('wardrobe')} onViewOutfits={() => setMatchStage('cards')} /> : matchStage === 'cards' ? <MatchCards context={matchContext} onEdit={() => setOverlay('edit')} onTry={() => setOverlay('tryon')} onContext={() => setMatchStage('context')} onBell={() => setOverlay('notifications')} onFinish={() => setMatchStage('result')} /> : <ImpactResult context={matchContext} onBack={() => setMatchStage('cards')} onReview={() => setMatchStage('cards')} onShare={() => setOverlay('shareImpact')} />)}
+    <main inert={captureSheet || overlay === 'item'}>
+      {tab === 'add' && <AddUpload photos={photos} agreed={agreed} onConsent={setAgreed} onFiles={handleFiles} onRemove={id => { setPhotos(current => current.filter(photo => photo.id !== id)); setUploadError('') }} onAnalyze={() => setCaptureSheet(true)} error={uploadError} reading={reading} pickerRef={pickerRef} hasDraft={!!draft} onReview={() => { setDetailMode('draft'); setOverlay('item') }} />}
+      {tab === 'wardrobe' && <Wardrobe items={items} filter={filter} onFilter={setFilter} message={message} onItem={id => { setEditedItem(items.find(item => item.id === id) ?? null); setDetailMode('saved'); setOverlay('item') }} onMatch={() => openContext('wardrobe')} onAdd={() => changeTab('add')} />}
+      {tab === 'match' && (matchStage === 'context' ? <ContextCollection context={matchContext} onChange={context => { setMatchContext(context); setContextError('') }} onBack={() => { if (contextOrigin === 'cards' && session) { setMatchContext(session.context); setMatchStage('cards') } else setTab('wardrobe') }} onViewOutfits={startMatch} error={contextError} onAdd={() => changeTab('add')} /> : matchStage === 'cards' && session ? <MatchCards key={session.id} session={session} onDecision={decide} onContext={() => openContext('cards')} onFinish={() => { if (session.selectedOutfitId) setMatchStage('result') }} onRestart={() => setSession({ ...session, index: 0 })} /> : session && selectedOutfit ? <ImpactResult session={session} outfit={selectedOutfit} onBack={reviewSelected} onReview={reviewSelected} /> : <div className="flow-empty"><p>Chưa có outfit được chọn.</p><Button className="primary wide" onClick={() => openContext('wardrobe')}>Chọn bối cảnh</Button></div>)}
       {tab === 'impact' && <Impact onShare={() => setOverlay('shareImpact')} />}
       {tab === 'community' && <Community onShare={() => setOverlay('shareCommunity')} />}
     </main>
     <BottomNav active={tab} onChange={changeTab} floating={isMatchCard} />
-    {captureSheet && <CaptureSheet onRetake={() => setCaptureSheet(false)} onOk={finishCapture} />}
-    {overlay === 'item' && <ItemDetail onClose={closeOverlay} />}
+    {captureSheet && <CaptureSheet photos={photos} analyzeOutfit={analyzeOutfit} onOption={setAnalyzeOutfit} onRetake={() => { setCaptureSheet(false); pickerRef.current?.click() }} onOk={finishCapture} />}
+    {overlay === 'item' && (analysisStatus !== 'idle' ? <div className="full-overlay white" role="dialog" aria-modal="true" aria-label="Chuẩn bị bản nháp demo"><Header title="AI đọc ảnh · demo" onBack={closeOverlay} /><div className="overlay-content"><div className="flow-empty">{analysisStatus === 'loading' ? <div role="status"><span className="loader" /><p>Đang chuẩn bị bản nháp demo...</p></div> : <div role="alert"><p>Không tạo được bản nháp. Ảnh đã chọn vẫn được giữ.</p><Button className="primary wide" onClick={finishCapture}>Thử lại</Button></div>}</div></div></div> : <ItemDetail key={detailMode === 'draft' ? draft?.id : editedItem?.id} items={detailMode === 'draft' ? draft?.items ?? [] : editedItem ? [editedItem] : []} photoCount={draft?.photos.length ?? 1} reviewing={detailMode === 'draft'} onChange={updateItem} onClose={closeOverlay} onSave={saveItems} />)}
     {overlay === 'edit' && <EditLook onClose={closeOverlay} />}
     {overlay === 'tryon' && <TryOn onClose={closeOverlay} />}
     {overlay === 'shareImpact' && <ShareImpact onClose={closeOverlay} />}
